@@ -1,0 +1,106 @@
+#!/bin/sh
+
+# load prefix
+
+
+get_partition_type()
+{
+	fstype=`blkid /dev/$dev`
+	fstype=`expr "$fstype" : '.*TYPE="\([A-Za-z0-9]*\)".*'`
+}
+
+
+scan_device()
+{
+	boot_device=""
+	boot_filesystem=""
+
+	# Scan all available device/partitions
+	cat /proc/diskstats | sort -r > $DISKSTATS_TMP
+
+	while read maj min dev ex1 ex2 ex3 ex4 ex5 ex6 ex7 ex8 ex9 ex10 ex11; do
+		if [ -z "$maj" -o "$maj" = "major" ]; then
+		continue;
+	fi
+
+	get_partition_type
+
+	# valid partition : iso9660, vfat, ext3, ext4
+	if [ "$fstype" = "iso9660" -o "$fstype" = "vfat" -o "$fstype" = "ext3" -o "$fstype" = "ext4" ]; then
+		boot_device="$dev"
+		boot_filesystem="$fstype"
+		true
+	fi
+	done < $DISKSTATS_TMP
+
+	# scan failed?
+	false
+}
+
+mount_target_partition() {
+	# ROOT_DEVICE : これを使うことが確定してから宣言したい
+	#ROOT_DEVICE="/dev/$1"
+	#export ROOT_DEVICE
+
+	echo "Scan $bootparam_sqsfile : $ROOT_DEVICE ($BOOT_FS)"
+   
+	mount -o ro $ROOT_DEVICE $MOUNTLOC 
+
+	# catch mount error
+	if [ $? -eq 0 ];
+	then
+		echo "Scan $bootparam_sqsfile : $ROOT_DEVICE mounted."
+
+		# TODO : ここで mount していることをテンポラリファイル等に書きたい
+
+		true
+	else
+		echo "Scan $bootparam_sqsfile : $ROOT_DEVICE mount failed"
+		false
+	fi	
+
+}
+
+
+unmount_target_partition() {
+	umount -f $MOUNTLOC
+	echo "Scan $bootparam_sqsfile : $ROOT_DEVICE un-mounted."
+
+	# TODO : mount テンポラリファイルをここで削除する
+}
+
+
+sqsscan_enabled() {
+	# needs root=/dev/ram0 and sqsfile=
+
+	if [ -z "$bootparam_root" -o "$bootparam_root" = "/dev/ram0" ]; then
+		debug "live boot is disabled"
+		return 1
+	fi
+
+	if [ -z "$bootparam_sqsfile" ]; then
+		debug "sqsfile parameter is empty"
+		return 1
+	fi
+
+	return 0
+}
+
+
+sqsscan_run() {
+	i=1
+	while test $i -le 20 ;
+	do
+		echo "--- scanning root media (part $i)---"
+		scan_device
+
+		# TODO : SCAN root file
+		i=`expr $i + 1`
+		sleep 3
+	done
+
+	# TODO : fallback?
+	# echo " Fallback shell. "
+	# exec /bin/sh
+}
+
